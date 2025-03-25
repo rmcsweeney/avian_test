@@ -140,12 +140,7 @@ fn keyboard_input(
     };
     let ground_facing_vector = Vec2::new(-p_transform.forward().x, p_transform.forward().z).normalize();
 
-    println!("gfv: {:?}", ground_facing_vector);
-    // let y = (ground_facing_vector.y * direction.y + direction.x * ground_facing_vector.x);
-    // let x = (ground_facing_vector.x * direction.y - direction.x * ground_facing_vector.y);
-
     direction = direction.y * ground_facing_vector - direction.x * Vec2::new(-ground_facing_vector.y, ground_facing_vector.x);
-
 
     if direction != Vector2::ZERO {
         movement_event_writer.send(MovementAction::Move(direction));
