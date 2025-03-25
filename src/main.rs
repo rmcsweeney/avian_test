@@ -1,10 +1,13 @@
+mod plugin;
+
 use std::f32::consts::PI;
-use bevy::{image::TranscodeFormat, prelude::*};
-use avian3d::prelude::*;
+use bevy::{prelude::*};
+use avian3d::{prelude::*, math::Scalar};
+use plugin::*;
 
 fn main() {
     App::new()
-        .add_plugins((DefaultPlugins, PhysicsPlugins::default()))
+        .add_plugins((DefaultPlugins, PhysicsPlugins::default(), CharacterControllerPlugin,))
         .add_systems(Startup, setup)
         .run();
 }
@@ -13,38 +16,56 @@ fn main() {
 fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    assets: Res<AssetServer>,
 ) {
-    // Static physics object with a collision shape
+    // Player
     commands.spawn((
-        RigidBody::Static,
-        Collider::cylinder(4.0, 0.1),
-        Mesh3d(meshes.add(Cylinder::new(4.0, 0.1))),
-        MeshMaterial3d(materials.add(Color::WHITE)),
+        Mesh3d(meshes.add(Capsule3d::new(0.4, 1.0))),
+        MeshMaterial3d(materials.add(Color::srgb(0.8, 0.7, 0.6))),
+        Transform::from_xyz(0.0, 1.5, 0.0),
+        CharacterControllerBundle::new(Collider::capsule(0.4, 1.0)).with_movement(
+            30.0,
+            0.92,
+            7.0,
+            (30.0 as Scalar).to_radians(),
+        ),
+        Friction::ZERO.with_combine_rule(CoefficientCombine::Min),
+        Restitution::ZERO.with_combine_rule(CoefficientCombine::Min),
+        GravityScale(2.0),
     ));
 
-    // Dynamic physics object with a collision shape and initial angular velocity
+    // A cube to move around
     commands.spawn((
         RigidBody::Dynamic,
         Collider::cuboid(1.0, 1.0, 1.0),
-        AngularVelocity(Vec3::new(2.5, 3.5, 1.5)),
-        Mesh3d(meshes.add(Cuboid::from_length(1.0))),
-        MeshMaterial3d(materials.add(Color::srgb_u8(124, 144, 255))),
-        Transform::from_xyz(0.0, 4.0, 0.0),
+        Mesh3d(meshes.add(Cuboid::default())),
+        MeshMaterial3d(materials.add(Color::srgb(0.8, 0.7, 0.6))),
+        Transform::from_xyz(3.0, 2.0, 3.0),
+    ));
+
+    // Environment (see the `collider_constructors` example for creating colliders from scenes)
+    commands.spawn((
+        SceneRoot(assets.load("character_controller_demo.glb#Scene0")),
+        Transform::from_rotation(Quat::from_rotation_y(-core::f32::consts::PI * 0.5)),
+        ColliderConstructorHierarchy::new(ColliderConstructor::ConvexHullFromMesh),
+        RigidBody::Static,
     ));
 
     // Light
     commands.spawn((
         PointLight {
+            intensity: 2_000_000.0,
+            range: 50.0,
             shadows_enabled: true,
             ..default()
         },
-        Transform::from_xyz(4.0, 8.0, 4.0),
+        Transform::from_xyz(0.0, 15.0, 0.0),
     ));
 
     // Camera
     commands.spawn((
         Camera3d::default(),
-        Transform::from_xyz(-2.5, 4.5, 9.0).looking_at(Vec3::ZERO, Dir3::Y),
+        Transform::from_xyz(-7.0, 9.5, 15.0).looking_at(Vec3::ZERO, Vec3::Y),
     ));
 }
