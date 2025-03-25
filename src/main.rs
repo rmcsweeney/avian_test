@@ -1,14 +1,18 @@
 mod plugin;
+// mod player;
 
+use std::f32::consts::FRAC_PI_2;
 use std::f32::consts::PI;
-use bevy::{prelude::*};
+use bevy::{prelude::*, input::mouse::AccumulatedMouseMotion};
 use avian3d::{prelude::*, math::Scalar};
 use plugin::*;
+// use player::*;
 
 fn main() {
     App::new()
         .add_plugins((DefaultPlugins, PhysicsPlugins::default(), CharacterControllerPlugin,))
         .add_systems(Startup, setup)
+        .add_systems(Update, player_look)
         .run();
 }
 
@@ -21,6 +25,8 @@ fn setup(
 ) {
     // Player
     commands.spawn((
+        Player,
+        CameraSensitivity::default(),
         Mesh3d(meshes.add(Capsule3d::new(0.4, 1.0))),
         MeshMaterial3d(materials.add(Color::srgb(0.8, 0.7, 0.6))),
         Transform::from_xyz(0.0, 1.5, 0.0),
@@ -33,7 +39,12 @@ fn setup(
         Friction::ZERO.with_combine_rule(CoefficientCombine::Min),
         Restitution::ZERO.with_combine_rule(CoefficientCombine::Min),
         GravityScale(2.0),
-    ));
+    )).with_children(|parent| {
+        parent.spawn((
+            Camera3d::default(),
+            Transform::from_xyz(0.0, 2.0, -5.0).looking_at(Vec3::ZERO, Vec3::Y)
+        ));
+    });
 
     // A cube to move around
     commands.spawn((
@@ -64,8 +75,54 @@ fn setup(
     ));
 
     // Camera
-    commands.spawn((
-        Camera3d::default(),
-        Transform::from_xyz(-7.0, 9.5, 15.0).looking_at(Vec3::ZERO, Vec3::Y),
-    ));
+    // commands.spawn((
+    //     Camera3d::default(),
+    //     Transform::from_xyz(-7.0, 9.5, 15.0).looking_at(Vec3::ZERO, Vec3::Y),
+    // ));
+}
+
+
+
+#[derive(Debug, Component, Deref, DerefMut)]
+struct CameraSensitivity(Vec2);
+
+impl Default for CameraSensitivity {
+    fn default() -> Self {
+        Self(Vec2::new(0.003, 0.002),)
+    }
+}
+
+#[derive(Debug, Component)]
+pub struct Player;
+
+
+
+fn player_look(
+    accumulated_mouse_motion: Res<AccumulatedMouseMotion>, 
+    mut player: Query<(&mut Transform, &mut CameraSensitivity), Without<Camera3d>>,
+    mut camera: Query<(&mut Transform, &mut Camera3d)>
+
+) {
+    let Ok((mut player_transform, camera_sensitivity)) = player.get_single_mut() else {
+        return;
+    };
+    let Ok((mut camera_transform, camera3d)) = camera.get_single_mut() else {
+        return;
+    };
+    let delta = accumulated_mouse_motion.delta;
+
+    if delta != Vec2::ZERO {
+        let delta_yaw = -delta.x * camera_sensitivity.x;
+        let delta_pitch = -delta.y * camera_sensitivity.y;
+
+        let (yaw, pitch, roll) = player_transform.rotation.to_euler(EulerRot::YXZ);
+        let yaw = yaw + delta_yaw;
+
+        const PITCH_LIMIT: f32 = FRAC_PI_2 - 0.01;
+        let pitch = (pitch + delta_pitch).clamp(-PITCH_LIMIT, PITCH_LIMIT);
+
+        // player_transform.rotation = Quat::from_euler(EulerRot::YXZ, yaw, pitch, roll);
+        player_transform.rotation = Quat::from_euler(EulerRot::YXZ, yaw, 0.0, 0.0);
+        // camera_transform.rotation = Quat::from_euler(EulerRot::YXZ, yaw, pitch, roll);
+    }
 }

@@ -98,7 +98,7 @@ impl CharacterControllerBundle {
                 Quaternion::default(), 
                 Dir3::NEG_Y
             ).with_max_distance(0.2),
-            locked_axes: LockedAxes::ROTATION_LOCKED,
+            locked_axes: LockedAxes::from_bits(0b000_101),
             movement: MovementBundle::default(),
         }
     }
@@ -119,6 +119,8 @@ impl CharacterControllerBundle {
 fn keyboard_input(
     mut movement_event_writer: EventWriter<MovementAction>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
+    mut player: Query<&mut Transform, With<CharacterController>>
+    // s: Single<&mut Transform, With<Player>>
 ) {
     let up = keyboard_input.any_pressed([KeyCode::KeyW, KeyCode::ArrowUp]);
     let down = keyboard_input.any_pressed([KeyCode::KeyS, KeyCode::ArrowDown]);
@@ -127,7 +129,23 @@ fn keyboard_input(
 
     let horizontal = right as i8 - left as i8;
     let vertical = up as i8 - down as i8;
-    let direction = Vector2::new(horizontal as Scalar, vertical as Scalar).clamp_length_max(1.0);
+    let mut direction = Vector2::new(horizontal as Scalar, vertical as Scalar).clamp_length_max(1.0);
+
+    // 
+
+    // let mut p_transform = player.get_single_mut();
+    let Ok(mut p_transform) = player.get_single_mut() else {
+        println!("fuck this");
+        return;
+    };
+    let ground_facing_vector = Vec2::new(-p_transform.forward().x, p_transform.forward().z).normalize();
+
+    println!("gfv: {:?}", ground_facing_vector);
+    // let y = (ground_facing_vector.y * direction.y + direction.x * ground_facing_vector.x);
+    // let x = (ground_facing_vector.x * direction.y - direction.x * ground_facing_vector.y);
+
+    direction = direction.y * ground_facing_vector - direction.x * Vec2::new(-ground_facing_vector.y, ground_facing_vector.x);
+
 
     if direction != Vector2::ZERO {
         movement_event_writer.send(MovementAction::Move(direction));
