@@ -7,16 +7,24 @@ use bevy::math::VectorSpace;
 use bevy::{prelude::*, input::mouse::AccumulatedMouseMotion, };
 use avian3d::{prelude::*, math::Scalar};
 use plugin::*;
+
+use bevy::window::{CursorGrabMode, PrimaryWindow};
 // use player::*;
 
 fn main() {
-    App::new()
-        .add_plugins((DefaultPlugins, PhysicsPlugins::default(), CharacterControllerPlugin ))
-        .add_systems(Startup, setup)
-        .add_systems(Update, player_look)
-        .run();
+    let mut app = App::new();
+    app.add_plugins((DefaultPlugins, PhysicsPlugins::default(), CharacterControllerPlugin ));
+    app.add_systems(Startup, setup);
+    app.add_systems(Startup, cursor_grab);
+    app.add_systems(Update, player_look);
+    app.run();
 }
 
+fn cursor_grab(mut q_windows: Query<&mut Window, With<PrimaryWindow>>) {
+    let mut primary_window = q_windows.single_mut();
+    primary_window.cursor_options.grab_mode = CursorGrabMode::Locked;
+    primary_window.cursor_options.visible = false;
+}
 
 fn setup(
     mut commands: Commands,
