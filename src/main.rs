@@ -9,6 +9,8 @@ use avian3d::{prelude::*, math::Scalar};
 use plugin::*;
 
 use bevy::window::{CursorGrabMode, PrimaryWindow};
+//use bevy::*;
+use bevy::app::AppExit;
 // use player::*;
 
 fn main() {
@@ -17,6 +19,7 @@ fn main() {
     app.add_systems(Startup, setup);
     app.add_systems(Startup, cursor_grab);
     app.add_systems(Update, player_look);
+    app.add_systems(Update, exit_system);
     app.run();
 }
 
@@ -24,6 +27,13 @@ fn cursor_grab(mut q_windows: Query<&mut Window, With<PrimaryWindow>>) {
     let mut primary_window = q_windows.single_mut();
     primary_window.cursor_options.grab_mode = CursorGrabMode::Locked;
     primary_window.cursor_options.visible = false;
+}
+
+
+fn exit_system(mut exit: EventWriter<AppExit>, keyboard_input: Res<ButtonInput<KeyCode>>) {
+    if keyboard_input.any_pressed([KeyCode::Escape]) {
+        exit.send(AppExit::Success);
+    }
 }
 
 fn setup(
