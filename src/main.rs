@@ -47,9 +47,19 @@ fn setup(
             Transform::from_xyz(0.0, 2.0, -5.0).looking_at(Vec3::ZERO, Vec3::Y)
         ));
         parent.spawn((
-            Mesh3d(meshes.add(Capsule3d::new(0.4, 1.0))),
+            Mesh3d(meshes.add(Capsule3d::new(0.15, 1.0))),
             MeshMaterial3d(materials.add(Color::srgb(0.8, 0.7, 0.6))),
             Transform::from_xyz(0.0, 0.0, 0.0).with_rotation(Quat::from_euler(EulerRot::YXZ, 0.0, PI/4.0, 0.0))
+        ));
+        parent.spawn((
+            Mesh3d(meshes.add(Sphere::new(0.175))),
+            MeshMaterial3d(materials.add(Color::srgb(0.8, 0.7, 0.6))),
+            Transform::from_xyz(-0.2, -0.3, -0.5).with_rotation(Quat::from_euler(EulerRot::YXZ, 0.0, PI/4.0, 0.0))
+        ));
+        parent.spawn((
+            Mesh3d(meshes.add(ConicalFrustum {radius_bottom:0.3, radius_top:0.2, height:0.3})),
+            MeshMaterial3d(materials.add(Color::srgb(0.8, 0.7, 0.6))),
+            Transform::from_xyz(0.0, 0.3, 0.4).with_rotation(Quat::from_euler(EulerRot::YXZ, 0.0, PI/4.0, 0.0))
         ));
     });
 
