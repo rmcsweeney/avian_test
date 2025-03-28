@@ -3,14 +3,15 @@ mod plugin;
 
 use std::f32::consts::FRAC_PI_2;
 use std::f32::consts::PI;
-use bevy::{prelude::*, input::mouse::AccumulatedMouseMotion};
+use bevy::math::VectorSpace;
+use bevy::{prelude::*, input::mouse::AccumulatedMouseMotion, };
 use avian3d::{prelude::*, math::Scalar};
 use plugin::*;
 // use player::*;
 
 fn main() {
     App::new()
-        .add_plugins((DefaultPlugins, PhysicsPlugins::default(), CharacterControllerPlugin,))
+        .add_plugins((DefaultPlugins, PhysicsPlugins::default(), CharacterControllerPlugin ))
         .add_systems(Startup, setup)
         .add_systems(Update, player_look)
         .run();
@@ -27,8 +28,9 @@ fn setup(
     commands.spawn((
         Player,
         CameraSensitivity::default(),
-        Mesh3d(meshes.add(Capsule3d::new(0.4, 1.0))),
-        MeshMaterial3d(materials.add(Color::srgb(0.8, 0.7, 0.6))),
+        
+        // Mesh3d
+        
         Transform::from_xyz(0.0, 1.5, 0.0),
         CharacterControllerBundle::new(Collider::capsule(0.4, 1.0)).with_movement(
             120.0,
@@ -43,6 +45,11 @@ fn setup(
         parent.spawn((
             Camera3d::default(),
             Transform::from_xyz(0.0, 2.0, -5.0).looking_at(Vec3::ZERO, Vec3::Y)
+        ));
+        parent.spawn((
+            Mesh3d(meshes.add(Capsule3d::new(0.4, 1.0))),
+            MeshMaterial3d(materials.add(Color::srgb(0.8, 0.7, 0.6))),
+            Transform::from_xyz(0.0, 0.0, 0.0).with_rotation(Quat::from_euler(EulerRot::YXZ, 0.0, PI/4.0, 0.0))
         ));
     });
 
@@ -115,14 +122,12 @@ fn player_look(
         let delta_yaw = -delta.x * camera_sensitivity.x;
         let delta_pitch = -delta.y * camera_sensitivity.y;
 
-        let (yaw, pitch, roll) = player_transform.rotation.to_euler(EulerRot::YXZ);
-        let yaw = yaw + delta_yaw;
+        camera_transform.rotate_around(Vec3::ZERO, Quat::from_euler(EulerRot::YXZ, delta_yaw, delta_pitch, 0.0));
+        let camera_transform_new = camera_transform.looking_at(Vec3::ZERO, Vec3::Y);
+        camera_transform.rotation = camera_transform_new.rotation;
 
-        const PITCH_LIMIT: f32 = FRAC_PI_2 - 0.01;
-        let pitch = (pitch + delta_pitch).clamp(-PITCH_LIMIT, PITCH_LIMIT);
+        // (let y, p, r) = camera_transform.rotation.to_euler();
+        // camera_transform.rotation.
 
-        // player_transform.rotation = Quat::from_euler(EulerRot::YXZ, yaw, pitch, roll);
-        player_transform.rotation = Quat::from_euler(EulerRot::YXZ, yaw, 0.0, 0.0);
-        // camera_transform.rotation = Quat::from_euler(EulerRot::YXZ, yaw, pitch, roll);
     }
 }
