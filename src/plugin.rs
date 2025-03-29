@@ -1,13 +1,12 @@
-use bevy::{input::keyboard, prelude::*};
-use avian3d::{math::{Quaternion, Scalar, Vector2, Vector, PI}, prelude::*};
-
-pub struct CharacterControllerPlugin;
+use bevy::{input::{keyboard, mouse::AccumulatedMouseMotion}, prelude::*};
+use avian3d::{math::{Quaternion, Scalar, Vector, Vector2, FRAC_PI_2, PI}, prelude::*};pub struct CharacterControllerPlugin;
 
 impl Plugin for CharacterControllerPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<MovementAction>().add_systems(
             Update,
             (
+                player_look,
                 keyboard_input,
                 gamepad_input,
                 update_grounded,
@@ -115,11 +114,65 @@ impl CharacterControllerBundle {
     }
 }
 
+#[derive(Debug, Component, Deref, DerefMut)]
+pub struct CameraSensitivity(Vec2);
+
+#[derive(Component)]
+pub struct PlayerCamera;
+
+#[derive(Component)]
+pub struct GroundFacingVector(Vec2);
+
+impl Default for CameraSensitivity {
+    fn default() -> Self {
+        Self(Vec2::new(0.003, 0.002),)
+    }
+}
+
+impl Default for GroundFacingVector {
+    fn default() -> Self {
+        Self(Vec2::new(0.0, 0.0),)
+    }
+}
+
+fn player_look(
+    accumulated_mouse_motion: Res<AccumulatedMouseMotion>, 
+    mut player: Query<(&mut CameraSensitivity), Without<Camera3d>>,
+    mut camera: Query<(&mut Transform, &mut GroundFacingVector), With<PlayerCamera>>
+
+) {
+    let Ok(camera_sensitivity) = player.get_single_mut() else {
+        return;
+    };
+    let Ok((mut camera_transform, mut ground_facing_vector)) = camera.get_single_mut() else {
+        return;
+    };
+    let delta = accumulated_mouse_motion.delta;
+
+    if delta != Vec2::ZERO {
+        let delta_yaw = -delta.x * camera_sensitivity.x;
+        let delta_pitch = -delta.y * camera_sensitivity.y;
+
+        // let (yaw, pitch, roll) = camera_transform.rotation.to_euler(EulerRot::YXZ);
+        // const PITCH_LIMIT: f32 = FRAC_PI_2 - 0.01;
+        // let delta_pitch = (pitch + delta_pitch).clamp(-PITCH_LIMIT, PITCH_LIMIT);
+
+
+        camera_transform.rotate_around(Vec3::ZERO, Quat::from_euler(EulerRot::YXZ, delta_yaw, delta_pitch, 0.0));
+        let camera_transform_new = camera_transform.looking_at(Vec3::ZERO, Vec3::Y);
+        camera_transform.rotation = camera_transform_new.rotation;
+
+        // (let y, p, r) = camera_transform.rotation.to_euler();
+        // camera_transform.rotation.
+        ground_facing_vector.0 = Vec2::new(-camera_transform.forward().x, camera_transform.forward().z).normalize();
+    }
+}
+
 /// Sends [`MovementAction`] events based on keyboard input.
 fn keyboard_input(
     mut movement_event_writer: EventWriter<MovementAction>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
-    mut player: Query<&mut Transform, With<CharacterController>>
+    camera: Query<&GroundFacingVector, With<Camera3d>>,
     // s: Single<&mut Transform, With<Player>>
 ) {
     let up = keyboard_input.any_pressed([KeyCode::KeyW, KeyCode::ArrowUp]);
@@ -131,16 +184,14 @@ fn keyboard_input(
     let vertical = up as i8 - down as i8;
     let mut direction = Vector2::new(horizontal as Scalar, vertical as Scalar).clamp_length_max(1.0);
 
-    // 
-
-    // let mut p_transform = player.get_single_mut();
-    let Ok(mut p_transform) = player.get_single_mut() else {
-        println!("fuck this");
+    
+    let Ok(ground_facing_vector) = camera.get_single() else {
+        println!("also fuck this");
         return;
     };
-    let ground_facing_vector = Vec2::new(-p_transform.forward().x, p_transform.forward().z).normalize();
+    //let ground_facing_vector = Vec2::new(-camera_transform.forward().x, camera_transform.forward().z).normalize();
 
-    direction = direction.y * ground_facing_vector - direction.x * Vec2::new(-ground_facing_vector.y, ground_facing_vector.x);
+    direction = -direction.y * ground_facing_vector.0 + direction.x * Vec2::new(-ground_facing_vector.0.y, ground_facing_vector.0.x);
 
     if direction != Vector2::ZERO {
         movement_event_writer.send(MovementAction::Move(direction));
@@ -208,7 +259,7 @@ fn movement(
         &JumpImpulse,
         &mut LinearVelocity,
         Has<Grounded>,
-    )>,
+    )>
 ) {
     // Precision is adjusted so that the example works with
     // both the `f32` and `f64` features. Otherwise you don't need this.
