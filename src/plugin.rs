@@ -1,3 +1,5 @@
+use std::f32::consts::{FRAC_PI_3, FRAC_PI_4};
+
 use bevy::{input::{keyboard, mouse::AccumulatedMouseMotion}, prelude::*};
 use avian3d::{math::{Quaternion, Scalar, Vector, Vector2, FRAC_PI_2, PI}, prelude::*};pub struct CharacterControllerPlugin;
 
@@ -150,13 +152,20 @@ fn player_look(
     let delta = accumulated_mouse_motion.delta;
 
     if delta != Vec2::ZERO {
+        //TODO: below pitch clamping is boken
         let delta_yaw = -delta.x * camera_sensitivity.x;
-        let delta_pitch = -delta.y * camera_sensitivity.y;
-
-        // let (yaw, pitch, roll) = camera_transform.rotation.to_euler(EulerRot::YXZ);
-        // const PITCH_LIMIT: f32 = FRAC_PI_2 - 0.01;
-        // let delta_pitch = (pitch + delta_pitch).clamp(-PITCH_LIMIT, PITCH_LIMIT);
-
+        let mut delta_pitch = -delta.y * camera_sensitivity.y;
+        println!("Pitch before clamp: {}", delta_pitch);
+        let (_yaw, pitch, _roll) = camera_transform.rotation.to_euler(EulerRot::YXZ);
+        const PITCH_LIMIT: f32 = FRAC_PI_4;
+        let new_pitch = (pitch + delta_pitch).clamp(-PITCH_LIMIT, PITCH_LIMIT);
+        println!("Current pitch: {} New pitch: {}", pitch, new_pitch);
+        if new_pitch > PITCH_LIMIT {
+            delta_pitch = PITCH_LIMIT - pitch;
+        } else if new_pitch < -PITCH_LIMIT {
+            delta_pitch = -PITCH_LIMIT - pitch;
+        }
+        println!("Pitch after clamp: {}", delta_pitch);
 
         camera_transform.rotate_around(Vec3::ZERO, Quat::from_euler(EulerRot::YXZ, delta_yaw, delta_pitch, 0.0));
         let camera_transform_new = camera_transform.looking_at(Vec3::ZERO, Vec3::Y);
@@ -291,4 +300,30 @@ fn apply_movement_damping(mut query: Query<(&MovementDampingFactor, &mut LinearV
         linear_velocity.x *= damping_factor.0;
         linear_velocity.z *= damping_factor.0;
     }
+}
+
+#[derive(Debug, Component)]
+pub struct Player;
+
+#[derive(Component)]
+pub struct Zoobie;
+
+fn zoobie_move(
+    mut movement_event_writer: EventWriter<MovementAction>,
+    mut player_transform: Query<&Transform, (With<Player>, Without<Zoobie>)>,
+    mut zoobies: Query<&Transform, (With<Zoobie>, Without<Player>)>,
+) {
+    let aggro = true;
+    let horizontal = aggro as i8;
+
+    // let Ok(mut zoobie_transform) = zoobies.get_mut(entity) {
+
+    // }
+
+    // let mut direction = Vector2::new(horizontal as Scalar, vertical as Scalar).clamp_length_max(1.0);
+    // direction = -direction.y * ground_facing_vector.0 + direction.x * Vec2::new(-ground_facing_vector.0.y, ground_facing_vector.0.x);
+
+    // if direction != Vector2::ZERO {
+    //     movement_event_writer.send(MovementAction::Move(direction));
+    // }
 }

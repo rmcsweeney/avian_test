@@ -98,6 +98,19 @@ fn setup(
         Transform::from_xyz(0.0, 15.0, 0.0),
     ));
 
+    commands.spawn((
+        Zoobie,
+        CharacterControllerBundle::new(Collider::capsule(0.4, 1.0)).with_movement(
+            10.0,
+            0.92,
+            7.0,
+            (30.0 as Scalar).to_radians(),
+        ),
+        Mesh3d(meshes.add(Cone::new(1.0, 2.0))),
+        MeshMaterial3d(materials.add(Color::BLACK)),
+        Transform::from_xyz(4.0, 2.0, 4.0),
+    ));
+
 }
 
 
@@ -105,4 +118,5 @@ fn setup(
 #[derive(Debug, Component)]
 pub struct Player;
 
-
+#[derive(Component)]
+pub struct Zoobie;
