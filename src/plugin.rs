@@ -74,6 +74,7 @@ pub struct MovementBundle {
     damping: MovementDampingFactor,
     jump_impulse: JumpImpulse,
     max_slope_angle: MaxSlopeAngle,
+    linear_velocity: LinearVelocity
 }
 
 impl MovementBundle {
@@ -82,19 +83,21 @@ impl MovementBundle {
         damping: Scalar,
         jump_impulse: Scalar,
         max_slope_angle: Scalar,
+        linear_velocity: Vec3
     ) -> Self {
         Self { 
             acceleration: MovementAcceleration(acceleration), 
             damping: MovementDampingFactor(damping), 
             jump_impulse: JumpImpulse(jump_impulse), 
             max_slope_angle: MaxSlopeAngle(max_slope_angle), 
+            linear_velocity: LinearVelocity(linear_velocity)
         }
     }
 }
 
 impl Default for MovementBundle {
     fn default() -> Self {
-        Self::new(30.0, 0.9, 7.0, PI * 0.45)
+        Self::new(30.0, 0.9, 7.0, PI * 0.45, Vec3::ZERO)
     }
 }
 
@@ -125,7 +128,7 @@ impl CharacterControllerBundle {
         jump_impulse: Scalar,
         max_slope_angle: Scalar,
     ) -> Self {
-        self.movement = MovementBundle::new(acceleration, damping, jump_impulse, max_slope_angle);
+        self.movement = MovementBundle::new(acceleration, damping, jump_impulse, max_slope_angle, Vec3::ZERO);
         self
     }
 }
@@ -157,7 +160,20 @@ impl NPCControllerBundle {
         jump_impulse: Scalar,
         max_slope_angle: Scalar,
     ) -> Self {
-        self.movement = MovementBundle::new(acceleration, damping, jump_impulse, max_slope_angle);
+        self.movement = MovementBundle::new(acceleration, damping, jump_impulse, max_slope_angle,  Vec3::ZERO);
+        self
+    }
+
+    pub fn with_movement_initial(
+        mut self,
+        acceleration: Scalar,
+        damping: Scalar,
+        jump_impulse: Scalar,
+        max_slope_angle: Scalar,
+        linear_velocity: Vec3
+
+    ) -> Self {
+        self.movement = MovementBundle::new(acceleration, damping, jump_impulse, max_slope_angle,  linear_velocity);
         self
     }
 }
@@ -221,26 +237,41 @@ fn mouse_input(
 ) {
     let player_transform = pt.single();
     let ptt = player_transform.translation;
+    let ground_facing_vector = Vec2::new(player_transform.forward().x, player_transform.forward().z).normalize();
+    let forward_facing_vector = Vec3::new(player_transform.forward().x, player_transform.forward().y, player_transform.forward().z).normalize();
+
+    // player_transform.rotation.nor
     if buttons.just_pressed(MouseButton::Left) {
         println!("spawning ball");
         // Left button was pressed
         commands.spawn((
             Bullet,     
-            Transform::from_xyz(ptt.x, ptt.y, ptt.z),
-            NPCControllerBundle::new(Collider::sphere(0.2)).with_movement(
+            // Transform::from_xyz(1.0, 0.5, 0.0),
+            Transform::from_xyz(
+                ptt.x + 2.0*forward_facing_vector.x, 
+                ptt.y + 2.0*forward_facing_vector.y, 
+                ptt.z + 2.0*forward_facing_vector.z
+            ),
+            NPCControllerBundle::new(Collider::sphere(0.2)).with_movement_initial(
                 120.0,
-                0.92,
+                0.9999,
                 7.0,
                 (30.0 as Scalar).to_radians(),
+                Vec3 { 
+                    x: 25.0*forward_facing_vector.x, 
+                    y: 25.0*forward_facing_vector.y, 
+                    z: 25.0*forward_facing_vector.z 
+                }
             ),
             Friction::ZERO.with_combine_rule(CoefficientCombine::Min),
             Restitution::ZERO.with_combine_rule(CoefficientCombine::Min),
-            GravityScale(2.0),
+            GravityScale(1.0),
         )).with_children(|parent| {
             parent.spawn((
                 Mesh3d(meshes.add(Sphere::new(0.2))),
                 MeshMaterial3d(materials.add(Color::srgb(0.8, 0.7, 0.6))),
-                Transform::from_xyz(ptt.x, ptt.y, ptt.z).with_rotation(Quat::from_euler(EulerRot::YXZ, 0.0, PI/4.0, 0.0))
+                // Transform::from_xyz(ptt.x, ptt.y, ptt.z).with_rotation(Quat::from_euler(EulerRot::YXZ, 0.0, PI/4.0, 0.0))
+                Transform::from_xyz(0.0, 0.0, 0.0).with_rotation(Quat::from_euler(EulerRot::YXZ, 0.0, PI/4.0, 0.0))
             ));
         });
     }

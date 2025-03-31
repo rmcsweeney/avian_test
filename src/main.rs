@@ -6,7 +6,7 @@ use bevy::prelude::*;
 use avian3d::{prelude::*, math::Scalar};
 use plugin::*;
 
-use bevy::window::{CursorGrabMode, PrimaryWindow};
+use bevy::window::{CursorGrabMode, PrimaryWindow, WindowRef};
 use bevy::{render::{camera::RenderTarget, view::RenderLayers, Render}};
 //use bevy::*;
 use bevy::app::AppExit;
@@ -16,8 +16,8 @@ fn main() {
     let mut app = App::new();
     app
         .add_plugins((DefaultPlugins, PhysicsPlugins::default(), CharacterControllerPlugin))
-        .add_systems(Startup, (setup, cursor_grab, spawn_crosshair))
-        .add_systems(Update, (exit_system))
+        .add_systems(Startup, (setup, cursor_grab, setup_observer, spawn_crosshair))
+        .add_systems(Update, exit_system)
         .run();
 }
 
@@ -136,6 +136,24 @@ fn setup(
 
 }
 
+fn setup_observer (mut commands: Commands,) {
+    let second_window = commands
+    .spawn(Window {
+        title: "Second window".to_owned(),
+        ..default()
+    })
+    .id();
+
+    commands.spawn((
+        Camera3d::default(),
+        Transform::from_translation(Vec3::new(-5.0, 4.0, -6.0)).looking_at(Vec3::ZERO, Vec3::Y),
+        Camera {
+            order: 3,
+            target: RenderTarget::Window(WindowRef::Entity(second_window)),
+            ..default()
+        },
+    ));
+}
 
 
 
