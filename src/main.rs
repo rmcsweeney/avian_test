@@ -7,6 +7,7 @@ use avian3d::{prelude::*, math::Scalar};
 use plugin::*;
 
 use bevy::window::{CursorGrabMode, PrimaryWindow};
+use bevy::{render::{camera::RenderTarget, view::RenderLayers, Render}};
 //use bevy::*;
 use bevy::app::AppExit;
 // use player::*;
@@ -15,8 +16,8 @@ fn main() {
     let mut app = App::new();
     app
         .add_plugins((DefaultPlugins, PhysicsPlugins::default(), CharacterControllerPlugin))
-        .add_systems(Startup, (setup, cursor_grab))
-        .add_systems(Update, exit_system)
+        .add_systems(Startup, (setup, cursor_grab, spawn_crosshair))
+        .add_systems(Update, (exit_system))
         .run();
 }
 
@@ -32,6 +33,12 @@ fn exit_system(mut exit: EventWriter<AppExit>, keyboard_input: Res<ButtonInput<K
         exit.send(AppExit::Success);
     }
 }
+
+#[derive(Debug, Component)]
+struct WorldModelCamera;
+
+const DEFAULT_RENDER_LAYER: usize = 0;
+const VIEW_MODEL_RENDER_LAYER: usize=1;
 
 fn setup(
     mut commands: Commands,
@@ -58,10 +65,26 @@ fn setup(
         GravityScale(2.0),
     )).with_children(|parent| {
         parent.spawn((
+            WorldModelCamera,
             Camera3d::default(),
-            Transform::from_xyz(0.0, 2.0, -5.0).looking_at(Vec3::ZERO, Vec3::Y),
-            PlayerCamera,
-            GroundFacingVector::default(),
+            Projection::from(PerspectiveProjection {
+                fov: 90.0_f32.to_radians(),
+                ..default()
+            }),
+            RenderLayers::layer(DEFAULT_RENDER_LAYER),
+        ));
+
+        parent.spawn((
+            Camera3d::default(),
+            Camera {
+                order: 1,
+                ..default()
+            },
+            Projection::from(PerspectiveProjection {
+                fov: 70.0_f32.to_radians(),
+                ..default()
+            }),
+            RenderLayers::layer(VIEW_MODEL_RENDER_LAYER),
         ));
         parent.spawn((
             Mesh3d(meshes.add(Capsule3d::new(0.4, 1.0))),
@@ -115,8 +138,6 @@ fn setup(
 
 
 
-#[derive(Debug, Component)]
-pub struct Player;
 
 #[derive(Component)]
 pub struct Zoobie;

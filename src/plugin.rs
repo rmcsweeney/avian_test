@@ -2,6 +2,7 @@ use std::f32::consts::{FRAC_PI_3, FRAC_PI_4};
 
 use bevy::{input::{keyboard, mouse::AccumulatedMouseMotion}, prelude::*};
 use avian3d::{math::{Quaternion, Scalar, Vector, Vector2, FRAC_PI_2, PI}, prelude::*};pub struct CharacterControllerPlugin;
+use bevy::{render::{camera::RenderTarget, view::RenderLayers, Render}};
 
 impl Plugin for CharacterControllerPlugin {
     fn build(&self, app: &mut App) {
@@ -13,6 +14,7 @@ impl Plugin for CharacterControllerPlugin {
                 update_grounded,
                 movement,
                 apply_movement_damping,
+                mouse_input
             ).chain(),
         );
     }
@@ -111,7 +113,7 @@ impl CharacterControllerBundle {
                 Quaternion::default(), 
                 Dir3::NEG_Y
             ).with_max_distance(0.2),
-            locked_axes: LockedAxes::from_bits(0b000_101),
+            locked_axes: LockedAxes::from_bits(0b000_111),
             movement: MovementBundle::default(),
         }
     }
@@ -169,6 +171,9 @@ pub struct PlayerCamera;
 #[derive(Component)]
 pub struct GroundFacingVector(Vec2);
 
+#[derive(Component)]
+pub struct Bullet;
+
 impl Default for CameraSensitivity {
     fn default() -> Self {
         Self(Vec2::new(0.003, 0.002),)
@@ -183,41 +188,61 @@ impl Default for GroundFacingVector {
 
 fn player_look(
     accumulated_mouse_motion: Res<AccumulatedMouseMotion>, 
-    mut player: Query<(&mut CameraSensitivity), Without<Camera3d>>,
-    mut camera: Query<(&mut Transform, &mut GroundFacingVector), With<PlayerCamera>>
-
+    mut player: Query<(&mut Transform, &mut CameraSensitivity), With<Player>>
 ) {
-    let Ok(camera_sensitivity) = player.get_single_mut() else {
-        return;
-    };
-    let Ok((mut camera_transform, mut ground_facing_vector)) = camera.get_single_mut() else {
+    let Ok((mut transform, camera_sensitivity)) = player.get_single_mut() else {
+        println!("test");
         return;
     };
     let delta = accumulated_mouse_motion.delta;
 
+    // println!("delta: {:?}", delta);
+
     if delta != Vec2::ZERO {
-        //TODO: below pitch clamping is boken
         let delta_yaw = -delta.x * camera_sensitivity.x;
-        let mut delta_pitch = -delta.y * camera_sensitivity.y;
-        println!("Pitch before clamp: {}", delta_pitch);
-        let (_yaw, pitch, _roll) = camera_transform.rotation.to_euler(EulerRot::YXZ);
-        const PITCH_LIMIT: f32 = FRAC_PI_4;
-        let new_pitch = (pitch + delta_pitch).clamp(-PITCH_LIMIT, PITCH_LIMIT);
-        println!("Current pitch: {} New pitch: {}", pitch, new_pitch);
-        if new_pitch > PITCH_LIMIT {
-            delta_pitch = PITCH_LIMIT - pitch;
-        } else if new_pitch < -PITCH_LIMIT {
-            delta_pitch = -PITCH_LIMIT - pitch;
-        }
-        println!("Pitch after clamp: {}", delta_pitch);
+        let delta_pitch = -delta.y * camera_sensitivity.y;
 
-        camera_transform.rotate_around(Vec3::ZERO, Quat::from_euler(EulerRot::YXZ, delta_yaw, delta_pitch, 0.0));
-        let camera_transform_new = camera_transform.looking_at(Vec3::ZERO, Vec3::Y);
-        camera_transform.rotation = camera_transform_new.rotation;
+        let (yaw, pitch, roll) = transform.rotation.to_euler(EulerRot::YXZ);
+        let yaw = yaw + delta_yaw;
 
-        // (let y, p, r) = camera_transform.rotation.to_euler();
-        // camera_transform.rotation.
-        ground_facing_vector.0 = Vec2::new(-camera_transform.forward().x, camera_transform.forward().z).normalize();
+        const PITCH_LIMIT: f32 = FRAC_PI_2 - 0.01;
+        let pitch = (pitch + delta_pitch).clamp(-PITCH_LIMIT, PITCH_LIMIT);
+
+        transform.rotation = Quat::from_euler(EulerRot::YXZ, yaw, pitch, roll);
+    }
+}
+
+fn mouse_input(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    buttons: Res<ButtonInput<MouseButton>>,
+    pt: Query<&Transform, With<Player>>
+) {
+    let player_transform = pt.single();
+    let ptt = player_transform.translation;
+    if buttons.just_pressed(MouseButton::Left) {
+        println!("spawning ball");
+        // Left button was pressed
+        commands.spawn((
+            Bullet,     
+            Transform::from_xyz(ptt.x, ptt.y, ptt.z),
+            NPCControllerBundle::new(Collider::sphere(0.2)).with_movement(
+                120.0,
+                0.92,
+                7.0,
+                (30.0 as Scalar).to_radians(),
+            ),
+            Friction::ZERO.with_combine_rule(CoefficientCombine::Min),
+            Restitution::ZERO.with_combine_rule(CoefficientCombine::Min),
+            GravityScale(2.0),
+        )).with_children(|parent| {
+            parent.spawn((
+                Mesh3d(meshes.add(Sphere::new(0.2))),
+                MeshMaterial3d(materials.add(Color::srgb(0.8, 0.7, 0.6))),
+                Transform::from_xyz(ptt.x, ptt.y, ptt.z).with_rotation(Quat::from_euler(EulerRot::YXZ, 0.0, PI/4.0, 0.0))
+            ));
+        });
     }
 }
 
@@ -225,8 +250,8 @@ fn player_look(
 fn keyboard_input(
     mut movement_event_writer: EventWriter<MovementAction>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
-    camera: Query<&GroundFacingVector, With<Camera3d>>,
-    // ccb: Query<&CharacterControllerBundle, With<Player>>
+    // camera: Query<&GroundFacingVector, With<Camera3d>>,
+    pt: Query<&Transform, With<Player>>
 ) {
     let up = keyboard_input.any_pressed([KeyCode::KeyW, KeyCode::ArrowUp]);
     let down = keyboard_input.any_pressed([KeyCode::KeyS, KeyCode::ArrowDown]);
@@ -238,15 +263,18 @@ fn keyboard_input(
     let mut direction = Vector2::new(horizontal as Scalar, vertical as Scalar).clamp_length_max(1.0);
 
     
-    let Ok(ground_facing_vector) = camera.get_single() else {
+    let Ok(player_transform) = pt.get_single() else {
         println!("also fuck this");
         return;
     };
 
     //let ground_facing_vector = Vec2::new(-camera_transform.forward().x, camera_transform.forward().z).normalize();
+    let ground_facing_vector = Vec2::new(-player_transform.forward().x, player_transform.forward().z).normalize(); //Defaults to 0, -1
 
-    direction = -direction.y * ground_facing_vector.0 + direction.x * Vec2::new(-ground_facing_vector.0.y, ground_facing_vector.0.x);
-
+    direction = -direction.y * ground_facing_vector + direction.x * Vec2::new(-ground_facing_vector.y, ground_facing_vector.x);
+    if direction != Vec2::ZERO {
+        println!("direction: {:?}", direction);
+    }
     if direction != Vector2::ZERO {
         movement_event_writer.send(MovementAction::Move(direction));
     }
@@ -353,4 +381,28 @@ fn zoobie_move(
     // if direction != Vector2::ZERO {
     //     movement_event_writer.send(MovementAction::Move(direction));
     // }
+}
+
+pub fn spawn_crosshair(mut commands: Commands, assets: Res<AssetServer<>>) {
+    let crosshair = assets.load("crosshair007.png");
+    commands
+        .spawn((
+            Node {
+                width: Val::Percent(100.),
+                height: Val::Percent(100.),
+                flex_direction: FlexDirection::Column,
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::SpaceEvenly,
+                ..default()
+            },
+            RenderLayers::layer(2),
+        )).with_children(|parent| {
+            parent.spawn((
+                ImageNode{
+                    image: crosshair,
+                    ..default()
+                },
+            ));
+        });
+
 }
