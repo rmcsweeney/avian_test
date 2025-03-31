@@ -1,10 +1,8 @@
 mod plugin;
 // mod player;
 
-use std::f32::consts::FRAC_PI_2;
 use std::f32::consts::PI;
-use bevy::math::VectorSpace;
-use bevy::{prelude::*, input::mouse::AccumulatedMouseMotion, };
+use bevy::prelude::*;
 use avian3d::{prelude::*, math::Scalar};
 use plugin::*;
 
@@ -15,12 +13,11 @@ use bevy::app::AppExit;
 
 fn main() {
     let mut app = App::new();
-    app.add_plugins((DefaultPlugins, PhysicsPlugins::default(), CharacterControllerPlugin ));
-    app.add_systems(Startup, setup);
-    app.add_systems(Startup, cursor_grab);
-    app.add_systems(Update, player_look);
-    app.add_systems(Update, exit_system);
-    app.run();
+    app
+        .add_plugins((DefaultPlugins, PhysicsPlugins::default(), CharacterControllerPlugin))
+        .add_systems(Startup, (setup, cursor_grab))
+        .add_systems(Update, exit_system)
+        .run();
 }
 
 fn cursor_grab(mut q_windows: Query<&mut Window, With<PrimaryWindow>>) {
@@ -62,7 +59,9 @@ fn setup(
     )).with_children(|parent| {
         parent.spawn((
             Camera3d::default(),
-            Transform::from_xyz(0.0, 2.0, -5.0).looking_at(Vec3::ZERO, Vec3::Y)
+            Transform::from_xyz(0.0, 2.0, -5.0).looking_at(Vec3::ZERO, Vec3::Y),
+            PlayerCamera,
+            GroundFacingVector::default(),
         ));
         parent.spawn((
             Mesh3d(meshes.add(Capsule3d::new(0.4, 1.0))),
@@ -72,7 +71,7 @@ fn setup(
     });
 
     // A cube to move around
-    commands.spawn((
+    let _cube = commands.spawn((
         RigidBody::Dynamic,
         Collider::cuboid(1.0, 1.0, 1.0),
         Mesh3d(meshes.add(Cuboid::default())),
@@ -81,7 +80,7 @@ fn setup(
     ));
 
     // Environment (see the `collider_constructors` example for creating colliders from scenes)
-    commands.spawn((
+    let _level = commands.spawn((
         SceneRoot(assets.load("character_controller_demo.glb#Scene0")),
         Transform::from_rotation(Quat::from_rotation_y(-core::f32::consts::PI * 0.5)),
         ColliderConstructorHierarchy::new(ColliderConstructor::ConvexHullFromMesh),
@@ -99,53 +98,25 @@ fn setup(
         Transform::from_xyz(0.0, 15.0, 0.0),
     ));
 
-    // Camera
-    // commands.spawn((
-    //     Camera3d::default(),
-    //     Transform::from_xyz(-7.0, 9.5, 15.0).looking_at(Vec3::ZERO, Vec3::Y),
-    // ));
+    commands.spawn((
+        Zoobie,
+        NPCControllerBundle::new(Collider::capsule(0.4, 1.0)).with_movement(
+            10.0,
+            0.92,
+            7.0,
+            (30.0 as Scalar).to_radians(),
+        ),
+        Mesh3d(meshes.add(Cone::new(1.0, 2.0))),
+        MeshMaterial3d(materials.add(Color::BLACK)),
+        Transform::from_xyz(4.0, 2.0, 4.0),
+    ));
+
 }
 
 
-
-#[derive(Debug, Component, Deref, DerefMut)]
-struct CameraSensitivity(Vec2);
-
-impl Default for CameraSensitivity {
-    fn default() -> Self {
-        Self(Vec2::new(0.003, 0.002),)
-    }
-}
 
 #[derive(Debug, Component)]
 pub struct Player;
 
-
-
-fn player_look(
-    accumulated_mouse_motion: Res<AccumulatedMouseMotion>, 
-    mut player: Query<(&mut Transform, &mut CameraSensitivity), Without<Camera3d>>,
-    mut camera: Query<(&mut Transform, &mut Camera3d)>
-
-) {
-    let Ok((mut player_transform, camera_sensitivity)) = player.get_single_mut() else {
-        return;
-    };
-    let Ok((mut camera_transform, camera3d)) = camera.get_single_mut() else {
-        return;
-    };
-    let delta = accumulated_mouse_motion.delta;
-
-    if delta != Vec2::ZERO {
-        let delta_yaw = -delta.x * camera_sensitivity.x;
-        let delta_pitch = -delta.y * camera_sensitivity.y;
-
-        camera_transform.rotate_around(Vec3::ZERO, Quat::from_euler(EulerRot::YXZ, delta_yaw, delta_pitch, 0.0));
-        let camera_transform_new = camera_transform.looking_at(Vec3::ZERO, Vec3::Y);
-        camera_transform.rotation = camera_transform_new.rotation;
-
-        // (let y, p, r) = camera_transform.rotation.to_euler();
-        // camera_transform.rotation.
-
-    }
-}
+#[derive(Component)]
+pub struct Zoobie;

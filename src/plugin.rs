@@ -1,15 +1,15 @@
-use bevy::{input::keyboard, prelude::*};
-use avian3d::{math::{Quaternion, Scalar, Vector2, Vector, PI}, prelude::*};
+use std::f32::consts::{FRAC_PI_3, FRAC_PI_4};
 
-pub struct CharacterControllerPlugin;
+use bevy::{input::{keyboard, mouse::AccumulatedMouseMotion}, prelude::*};
+use avian3d::{math::{Quaternion, Scalar, Vector, Vector2, FRAC_PI_2, PI}, prelude::*};pub struct CharacterControllerPlugin;
 
 impl Plugin for CharacterControllerPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<MovementAction>().add_systems(
             Update,
             (
+                player_look,
                 keyboard_input,
-                gamepad_input,
                 update_grounded,
                 movement,
                 apply_movement_damping,
@@ -26,6 +26,9 @@ pub enum MovementAction {
 
 #[derive(Component)]
 pub struct CharacterController;
+
+#[derive(Component)]
+pub struct NPCController;
 
 #[derive(Component)]
 #[component(storage = "SparseSet")]
@@ -46,6 +49,16 @@ pub struct MaxSlopeAngle(Scalar);
 #[derive(Bundle)]
 pub struct CharacterControllerBundle {
     character_controller: CharacterController,
+    rigid_body: RigidBody,
+    collider: Collider,
+    ground_caster: ShapeCaster,
+    locked_axes: LockedAxes,
+    movement: MovementBundle,
+}
+
+#[derive(Bundle)]
+pub struct NPCControllerBundle {
+    npc_controller: NPCController,
     rigid_body: RigidBody,
     collider: Collider,
     ground_caster: ShapeCaster,
@@ -115,12 +128,105 @@ impl CharacterControllerBundle {
     }
 }
 
+impl NPCControllerBundle {
+    pub fn new(collider: Collider) -> Self {
+        let mut caster_shape = collider.clone();
+        caster_shape.set_scale(Vector::ONE * 0.99, 10);
+
+        Self {
+            npc_controller: NPCController,
+            rigid_body: RigidBody::Dynamic,
+            collider,
+            ground_caster: ShapeCaster::new(
+                caster_shape,
+                Vector::ZERO, 
+                Quaternion::default(), 
+                Dir3::NEG_Y
+            ).with_max_distance(0.2),
+            locked_axes: LockedAxes::from_bits(0b000_101),
+            movement: MovementBundle::default(),
+        }
+    }
+
+    pub fn with_movement(
+        mut self,
+        acceleration: Scalar,
+        damping: Scalar,
+        jump_impulse: Scalar,
+        max_slope_angle: Scalar,
+    ) -> Self {
+        self.movement = MovementBundle::new(acceleration, damping, jump_impulse, max_slope_angle);
+        self
+    }
+}
+
+#[derive(Debug, Component, Deref, DerefMut)]
+pub struct CameraSensitivity(Vec2);
+
+#[derive(Component)]
+pub struct PlayerCamera;
+
+#[derive(Component)]
+pub struct GroundFacingVector(Vec2);
+
+impl Default for CameraSensitivity {
+    fn default() -> Self {
+        Self(Vec2::new(0.003, 0.002),)
+    }
+}
+
+impl Default for GroundFacingVector {
+    fn default() -> Self {
+        Self(Vec2::new(0.0, 0.0),)
+    }
+}
+
+fn player_look(
+    accumulated_mouse_motion: Res<AccumulatedMouseMotion>, 
+    mut player: Query<(&mut CameraSensitivity), Without<Camera3d>>,
+    mut camera: Query<(&mut Transform, &mut GroundFacingVector), With<PlayerCamera>>
+
+) {
+    let Ok(camera_sensitivity) = player.get_single_mut() else {
+        return;
+    };
+    let Ok((mut camera_transform, mut ground_facing_vector)) = camera.get_single_mut() else {
+        return;
+    };
+    let delta = accumulated_mouse_motion.delta;
+
+    if delta != Vec2::ZERO {
+        //TODO: below pitch clamping is boken
+        let delta_yaw = -delta.x * camera_sensitivity.x;
+        let mut delta_pitch = -delta.y * camera_sensitivity.y;
+        println!("Pitch before clamp: {}", delta_pitch);
+        let (_yaw, pitch, _roll) = camera_transform.rotation.to_euler(EulerRot::YXZ);
+        const PITCH_LIMIT: f32 = FRAC_PI_4;
+        let new_pitch = (pitch + delta_pitch).clamp(-PITCH_LIMIT, PITCH_LIMIT);
+        println!("Current pitch: {} New pitch: {}", pitch, new_pitch);
+        if new_pitch > PITCH_LIMIT {
+            delta_pitch = PITCH_LIMIT - pitch;
+        } else if new_pitch < -PITCH_LIMIT {
+            delta_pitch = -PITCH_LIMIT - pitch;
+        }
+        println!("Pitch after clamp: {}", delta_pitch);
+
+        camera_transform.rotate_around(Vec3::ZERO, Quat::from_euler(EulerRot::YXZ, delta_yaw, delta_pitch, 0.0));
+        let camera_transform_new = camera_transform.looking_at(Vec3::ZERO, Vec3::Y);
+        camera_transform.rotation = camera_transform_new.rotation;
+
+        // (let y, p, r) = camera_transform.rotation.to_euler();
+        // camera_transform.rotation.
+        ground_facing_vector.0 = Vec2::new(-camera_transform.forward().x, camera_transform.forward().z).normalize();
+    }
+}
+
 /// Sends [`MovementAction`] events based on keyboard input.
 fn keyboard_input(
     mut movement_event_writer: EventWriter<MovementAction>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
-    mut player: Query<&mut Transform, With<CharacterController>>
-    // s: Single<&mut Transform, With<Player>>
+    camera: Query<&GroundFacingVector, With<Camera3d>>,
+    // ccb: Query<&CharacterControllerBundle, With<Player>>
 ) {
     let up = keyboard_input.any_pressed([KeyCode::KeyW, KeyCode::ArrowUp]);
     let down = keyboard_input.any_pressed([KeyCode::KeyS, KeyCode::ArrowDown]);
@@ -131,16 +237,15 @@ fn keyboard_input(
     let vertical = up as i8 - down as i8;
     let mut direction = Vector2::new(horizontal as Scalar, vertical as Scalar).clamp_length_max(1.0);
 
-    // 
-
-    // let mut p_transform = player.get_single_mut();
-    let Ok(mut p_transform) = player.get_single_mut() else {
-        println!("fuck this");
+    
+    let Ok(ground_facing_vector) = camera.get_single() else {
+        println!("also fuck this");
         return;
     };
-    let ground_facing_vector = Vec2::new(-p_transform.forward().x, p_transform.forward().z).normalize();
 
-    direction = direction.y * ground_facing_vector - direction.x * Vec2::new(-ground_facing_vector.y, ground_facing_vector.x);
+    //let ground_facing_vector = Vec2::new(-camera_transform.forward().x, camera_transform.forward().z).normalize();
+
+    direction = -direction.y * ground_facing_vector.0 + direction.x * Vec2::new(-ground_facing_vector.0.y, ground_facing_vector.0.x);
 
     if direction != Vector2::ZERO {
         movement_event_writer.send(MovementAction::Move(direction));
@@ -151,26 +256,7 @@ fn keyboard_input(
     }
 }
 
-/// Sends [`MovementAction`] events based on gamepad input.
-fn gamepad_input(
-    mut movement_event_writer: EventWriter<MovementAction>,
-    gamepads: Query<&Gamepad>,
-) {
-    for gamepad in gamepads.iter() {
-        if let (Some(x), Some(y)) = (
-            gamepad.get(GamepadAxis::LeftStickX),
-            gamepad.get(GamepadAxis::LeftStickY),
-        ) {
-            movement_event_writer.send(MovementAction::Move(
-                Vector2::new(x as Scalar, y as Scalar).clamp_length_max(1.0),
-            ));
-        }
-
-        if gamepad.just_pressed(GamepadButton::South) {
-            movement_event_writer.send(MovementAction::Jump);
-        }
-    }
-}
+// fn do_movement()
 
 /// Updates the [`Grounded`] status for character controllers.
 fn update_grounded(
@@ -207,8 +293,9 @@ fn movement(
         &MovementAcceleration,
         &JumpImpulse,
         &mut LinearVelocity,
-        Has<Grounded>,
-    )>,
+        Has<Grounded>
+    ), 
+        With<CharacterController>>
 ) {
     // Precision is adjusted so that the example works with
     // both the `f32` and `f64` features. Otherwise you don't need this.
@@ -240,4 +327,30 @@ fn apply_movement_damping(mut query: Query<(&MovementDampingFactor, &mut LinearV
         linear_velocity.x *= damping_factor.0;
         linear_velocity.z *= damping_factor.0;
     }
+}
+
+#[derive(Debug, Component)]
+pub struct Player;
+
+#[derive(Component)]
+pub struct Zoobie;
+
+fn zoobie_move(
+    mut movement_event_writer: EventWriter<MovementAction>,
+    mut player_transform: Query<&Transform, (With<Player>, Without<Zoobie>)>,
+    mut zoobies: Query<&Transform, (With<Zoobie>, Without<Player>)>,
+) {
+    let aggro = true;
+    let horizontal = aggro as i8;
+
+    // let Ok(mut zoobie_transform) = zoobies.get_mut(entity) {
+
+    // }
+
+    // let mut direction = Vector2::new(horizontal as Scalar, vertical as Scalar).clamp_length_max(1.0);
+    // direction = -direction.y * ground_facing_vector.0 + direction.x * Vec2::new(-ground_facing_vector.0.y, ground_facing_vector.0.x);
+
+    // if direction != Vector2::ZERO {
+    //     movement_event_writer.send(MovementAction::Move(direction));
+    // }
 }
