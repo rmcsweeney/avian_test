@@ -100,7 +100,7 @@ fn setup(
 
     commands.spawn((
         Zoobie,
-        CharacterControllerBundle::new(Collider::capsule(0.4, 1.0)).with_movement(
+        NPCControllerBundle::new(Collider::capsule(0.4, 1.0)).with_movement(
             10.0,
             0.92,
             7.0,

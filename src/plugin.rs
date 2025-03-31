@@ -10,7 +10,6 @@ impl Plugin for CharacterControllerPlugin {
             (
                 player_look,
                 keyboard_input,
-                gamepad_input,
                 update_grounded,
                 movement,
                 apply_movement_damping,
@@ -27,6 +26,9 @@ pub enum MovementAction {
 
 #[derive(Component)]
 pub struct CharacterController;
+
+#[derive(Component)]
+pub struct NPCController;
 
 #[derive(Component)]
 #[component(storage = "SparseSet")]
@@ -47,6 +49,16 @@ pub struct MaxSlopeAngle(Scalar);
 #[derive(Bundle)]
 pub struct CharacterControllerBundle {
     character_controller: CharacterController,
+    rigid_body: RigidBody,
+    collider: Collider,
+    ground_caster: ShapeCaster,
+    locked_axes: LockedAxes,
+    movement: MovementBundle,
+}
+
+#[derive(Bundle)]
+pub struct NPCControllerBundle {
+    npc_controller: NPCController,
     rigid_body: RigidBody,
     collider: Collider,
     ground_caster: ShapeCaster,
@@ -91,6 +103,38 @@ impl CharacterControllerBundle {
 
         Self {
             character_controller: CharacterController,
+            rigid_body: RigidBody::Dynamic,
+            collider,
+            ground_caster: ShapeCaster::new(
+                caster_shape,
+                Vector::ZERO, 
+                Quaternion::default(), 
+                Dir3::NEG_Y
+            ).with_max_distance(0.2),
+            locked_axes: LockedAxes::from_bits(0b000_101),
+            movement: MovementBundle::default(),
+        }
+    }
+
+    pub fn with_movement(
+        mut self,
+        acceleration: Scalar,
+        damping: Scalar,
+        jump_impulse: Scalar,
+        max_slope_angle: Scalar,
+    ) -> Self {
+        self.movement = MovementBundle::new(acceleration, damping, jump_impulse, max_slope_angle);
+        self
+    }
+}
+
+impl NPCControllerBundle {
+    pub fn new(collider: Collider) -> Self {
+        let mut caster_shape = collider.clone();
+        caster_shape.set_scale(Vector::ONE * 0.99, 10);
+
+        Self {
+            npc_controller: NPCController,
             rigid_body: RigidBody::Dynamic,
             collider,
             ground_caster: ShapeCaster::new(
@@ -182,7 +226,7 @@ fn keyboard_input(
     mut movement_event_writer: EventWriter<MovementAction>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
     camera: Query<&GroundFacingVector, With<Camera3d>>,
-    // s: Single<&mut Transform, With<Player>>
+    // ccb: Query<&CharacterControllerBundle, With<Player>>
 ) {
     let up = keyboard_input.any_pressed([KeyCode::KeyW, KeyCode::ArrowUp]);
     let down = keyboard_input.any_pressed([KeyCode::KeyS, KeyCode::ArrowDown]);
@@ -198,6 +242,7 @@ fn keyboard_input(
         println!("also fuck this");
         return;
     };
+
     //let ground_facing_vector = Vec2::new(-camera_transform.forward().x, camera_transform.forward().z).normalize();
 
     direction = -direction.y * ground_facing_vector.0 + direction.x * Vec2::new(-ground_facing_vector.0.y, ground_facing_vector.0.x);
@@ -211,26 +256,7 @@ fn keyboard_input(
     }
 }
 
-/// Sends [`MovementAction`] events based on gamepad input.
-fn gamepad_input(
-    mut movement_event_writer: EventWriter<MovementAction>,
-    gamepads: Query<&Gamepad>,
-) {
-    for gamepad in gamepads.iter() {
-        if let (Some(x), Some(y)) = (
-            gamepad.get(GamepadAxis::LeftStickX),
-            gamepad.get(GamepadAxis::LeftStickY),
-        ) {
-            movement_event_writer.send(MovementAction::Move(
-                Vector2::new(x as Scalar, y as Scalar).clamp_length_max(1.0),
-            ));
-        }
-
-        if gamepad.just_pressed(GamepadButton::South) {
-            movement_event_writer.send(MovementAction::Jump);
-        }
-    }
-}
+// fn do_movement()
 
 /// Updates the [`Grounded`] status for character controllers.
 fn update_grounded(
@@ -267,8 +293,9 @@ fn movement(
         &MovementAcceleration,
         &JumpImpulse,
         &mut LinearVelocity,
-        Has<Grounded>,
-    )>
+        Has<Grounded>
+    ), 
+        With<CharacterController>>
 ) {
     // Precision is adjusted so that the example works with
     // both the `f32` and `f64` features. Otherwise you don't need this.
